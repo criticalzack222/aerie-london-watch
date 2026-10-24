@@ -1,0 +1,14 @@
+{
+  "name": "aerie-london-watch",
+  "version": "1.0.0",
+  "description": "Live 3D bird's-eye view of London with every public TfL traffic camera.",
+  "private": true,
+  "main": "server/server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}

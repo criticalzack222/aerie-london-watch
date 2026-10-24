@@ -1,0 +1,8 @@
+# Static-only deploy: the frontend talks to TfL directly when no backend is present.
+[build]
+  publish = "public"
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

@@ -1,0 +1,12 @@
+{
+  "name": "Aerie London Watch",
+  "short_name": "Aerie",
+  "description": "Live 3D bird's-eye view of London with every public TfL traffic camera.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070b0f",
+  "theme_color": "#070b0f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

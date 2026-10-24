@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aerie London Watch</title>
+<meta name="description" content="A live, 3D bird's-eye view of London with every public TfL traffic camera and road disruption.">
+<meta name="theme-color" content="#070b0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand"><i aria-hidden="true"></i><span>AERIE</span><small>LONDON WATCH</small></div>
+
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Camera, street or postcode" aria-label="Search cameras or places" aria-controls="results">
+      <div class="results" id="results" role="listbox"></div>
+    </div>
+
+    <div class="seg" role="group" aria-label="Imagery">
+      <button data-style="sat" aria-pressed="true">SAT</button>
+      <button data-style="night" aria-pressed="false">NIGHT</button>
+      <button data-style="map" aria-pressed="false">MAP</button>
+    </div>
+    <div class="tools">
+      <button class="tool" id="btn3d" aria-pressed="true" title="3D buildings and tilt (B)">3D</button>
+      <button class="tool" id="btnDisr" aria-pressed="true" title="Road disruptions (R)">ALERTS</button>
+      <button class="tool" id="btnPatrol" aria-pressed="false" title="Patrol: tour the cameras on screen (A)">PATROL</button>
+      <button class="tool" id="btnSplit" aria-pressed="false" title="Split screen (W)">SPLIT</button>
+    </div>
+    <div class="clock" aria-label="Time"><b id="clkLon">--:--:--</b> LDN</div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div id="map" aria-label="Map of London"></div>
+    <div class="hud" aria-hidden="true">
+      <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+      <div class="cross"></div>
+    </div>
+
+    <div class="status" id="status"><span class="dot" id="netDot"></span><span id="netTxt">CONNECTING</span></div>
+
+    <div class="roads" id="roads" aria-label="Filter by road"></div>
+
+    <div class="readout" id="readout">
+      <div><span>LAT</span><b id="rLat">—</b></div>
+      <div><span>LON</span><b id="rLon">—</b></div>
+      <div><span>ALT</span><b id="rAlt">—</b></div>
+      <div><span>HDG</span><b id="rHdg">—</b></div>
+      <div><span>VIEW</span><b id="rCams">—</b></div>
+    </div>
+
+    <div class="mapctl">
+      <button id="zin" aria-label="Zoom in" title="Zoom in">+</button>
+      <button id="zout" aria-label="Zoom out" title="Zoom out">−</button>
+      <button id="north" aria-label="Face north" title="Face north"><span id="compass">▲</span></button>
+      <button id="locate" aria-label="Go to my location" title="My location">◎</button>
+      <button id="home" aria-label="Reset to central London" title="Reset view (H)">⌂</button>
+    </div>
+
+    <div class="boot" id="boot">
+      <div class="boot-in">
+        <div class="brand big"><i></i>AERIE</div>
+        <p id="bootTxt">Loading the map of London…</p>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel" id="panel">
+    <div class="grab" id="grab" aria-hidden="true"></div>
+    <div class="ptabs" role="tablist">
+      <button role="tab" id="tabFeed" aria-selected="true" aria-controls="paneFeed">FEED</button>
+      <button role="tab" id="tabWall" aria-selected="false" aria-controls="paneWall">WALL <span id="wallCount" class="count">0</span></button>
+      <button role="tab" id="tabAlerts" aria-selected="false" aria-controls="paneAlerts">ALERTS <span id="alertCount" class="count">0</span></button>
+    </div>
+
+    <section class="pbody" id="paneFeed" role="tabpanel">
+      <div class="feed" id="feed">
+        <div class="empty">Tap an amber dot on the map to open that camera.<br><br>Numbered circles are groups: tap one to zoom in.</div>
+      </div>
+      <div id="camInfo" hidden>
+        <h2 class="camname" id="camName"></h2>
+        <dl class="meta" id="camMeta"></dl>
+        <div class="actions">
+          <button class="primary" id="pinBtn">PIN TO WALL</button>
+          <button id="clipBtn">PLAY CLIP</button>
+          <button id="bigBtn">FULLSCREEN</button>
+          <button id="streetBtn">STREET LEVEL</button>
+          <a id="svLink" target="_blank" rel="noopener">STREET VIEW ↗</a>
+          <button id="shareBtn">COPY LINK</button>
+        </div>
+      </div>
+      <div>
+        <div class="label">Nearest to crosshair</div>
+        <ul class="near" id="near"></ul>
+      </div>
+    </section>
+
+    <section class="pbody" id="paneWall" role="tabpanel" hidden>
+      <p class="hint" id="wallHint">Pin up to 9 cameras and watch them side by side. Turn on SPLIT for a bigger wall.</p>
+      <div class="wall" id="wall"></div>
+    </section>
+
+    <section class="pbody" id="paneAlerts" role="tabpanel" hidden>
+      <ul class="alerts" id="alerts"></ul>
+    </section>
+
+    <p class="note">Live stills from TfL JamCams (public traffic cameras, Open Government Licence). They refresh every few minutes. Imagery © Esri. Map data © OpenStreetMap, OpenFreeMap.</p>
+  </aside>
+</div>
+
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Camera fullscreen" hidden>
+  <div class="viewer-top">
+    <p id="viewerCap"></p>
+    <div class="actions">
+      <button id="viewerPrev" aria-label="Previous camera">◀ PREV</button>
+      <button id="viewerNext" aria-label="Next nearest camera">NEXT ▶</button>
+      <button id="viewerClose">CLOSE ✕</button>
+    </div>
+  </div>
+  <img id="viewerImg" alt="">
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

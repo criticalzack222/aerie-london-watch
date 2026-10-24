@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: aerie-london-watch
+    runtime: node
+    plan: free
+    buildCommand: "echo no build step"
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: TFL_APP_KEY
+        sync: false
+      - key: CONTACT_EMAIL
+        sync: false
