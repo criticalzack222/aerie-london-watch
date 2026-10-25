@@ -39,6 +39,7 @@
       <button class="tool" id="btnPatrol" aria-pressed="false" title="Patrol: tour the cameras on screen (A)">PATROL</button>
       <button class="tool" id="btnSplit" aria-pressed="false" title="Split screen (W)">SPLIT</button>
     </div>
+    <button class="wx" id="wx" title="London weather and transport" hidden></button>
     <div class="clock" aria-label="Time"><b id="clkLon">--:--:--</b> LDN</div>
   </header>
 
@@ -67,6 +68,7 @@
       <button id="north" aria-label="Face north" title="Face north"><span id="compass">▲</span></button>
       <button id="locate" aria-label="Go to my location" title="My location">◎</button>
       <button id="home" aria-label="Reset to central London" title="Reset view (H)">⌂</button>
+      <button id="saveView" aria-label="Save this view" title="Save this view (V)">★</button>
     </div>
 
     <div class="boot" id="boot">
@@ -83,12 +85,19 @@
       <button role="tab" id="tabFeed" aria-selected="true" aria-controls="paneFeed">FEED</button>
       <button role="tab" id="tabWall" aria-selected="false" aria-controls="paneWall">WALL <span id="wallCount" class="count">0</span></button>
       <button role="tab" id="tabAlerts" aria-selected="false" aria-controls="paneAlerts">ALERTS <span id="alertCount" class="count">0</span></button>
+      <button role="tab" id="tabCity" aria-selected="false" aria-controls="paneCity">CITY <span id="cityCount" class="count" hidden>0</span></button>
     </div>
 
     <section class="pbody" id="paneFeed" role="tabpanel">
       <div class="feed" id="feed">
         <div class="empty">Tap an amber dot on the map to open that camera.<br><br>Numbered circles are groups: tap one to zoom in.</div>
       </div>
+      <div class="rewind" id="rewind" hidden>
+        <button id="rwPlay" aria-label="Play the last half hour">▶</button>
+        <input type="range" id="rwRange" min="0" max="0" value="0" step="1" aria-label="Rewind through recent pictures">
+        <span id="rwLabel">LIVE</span>
+      </div>
+      <p class="hint" id="rwHint" hidden></p>
       <div id="camInfo" hidden>
         <h2 class="camname" id="camName"></h2>
         <dl class="meta" id="camMeta"></dl>
@@ -116,7 +125,20 @@
       <ul class="alerts" id="alerts"></ul>
     </section>
 
-    <p class="note">Live stills from TfL JamCams (public traffic cameras, Open Government Licence). They refresh every few minutes. Imagery © Esri. Map data © OpenStreetMap, OpenFreeMap.</p>
+    <section class="pbody" id="paneCity" role="tabpanel" hidden>
+      <div class="wxcard" id="wxCard"><p class="hint">Loading London weather…</p></div>
+      <div>
+        <div class="label">Saved views</div>
+        <ul class="near" id="saved"></ul>
+        <p class="hint" id="savedHint">Tap ★ on the map to save the current view, angle and zoom.</p>
+      </div>
+      <div>
+        <div class="label">Rail network <span id="netUpdated"></span></div>
+        <ul class="lines" id="lines"></ul>
+      </div>
+    </section>
+
+    <p class="note">Live stills from TfL JamCams (public traffic cameras, Open Government Licence). They refresh every few minutes. Weather by Open-Meteo. Imagery © Esri. Map data © OpenStreetMap, OpenFreeMap.</p>
   </aside>
 </div>
 

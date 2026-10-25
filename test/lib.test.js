@@ -68,3 +68,34 @@ test('cache dedupes in-flight loads and serves stale on error', async () => {
   const s = await cache.get('k', 0, async () => { throw new Error('down'); });
   assert.equal(s.value, 1); assert.equal(s.stale, true);
 });
+
+const { makeRecorder, normaliseLines, normaliseWeather } = require('../server/lib');
+
+test('recorder keeps distinct frames, caps memory, forgets idle cameras', () => {
+  const r = makeRecorder({ maxCams: 2, maxFrames: 3, watchMs: 1000 });
+  r.watch('a', 0);
+  assert.ok(r.add('a', { t: 1, hash: 'x', buf: Buffer.alloc(10) }));
+  assert.ok(!r.add('a', { t: 2, hash: 'x', buf: Buffer.alloc(10) }), 'same picture is skipped');
+  for (let i = 3; i < 8; i++) r.add('a', { t: i, hash: 'h' + i, buf: Buffer.alloc(10) });
+  assert.deepEqual(r.list('a').map(f => f.t), [5, 6, 7]);
+  assert.equal(r.get('a', 6).hash, 'h6');
+  assert.ok(!r.add('nope', { t: 1, hash: 'z' }), 'unwatched cameras are not recorded');
+  r.watch('b', 10); r.watch('c', 20);            // over maxCams: 'a' (oldest) goes
+  assert.deepEqual(r.due(30).sort(), ['b', 'c']);
+  assert.deepEqual(r.due(5000), []);             // idle past watchMs
+});
+
+test('normaliseLines sorts worst first', () => {
+  const out = normaliseLines([
+    { id: 'victoria', name: 'Victoria', modeName: 'tube', lineStatuses: [{ statusSeverity: 10, statusSeverityDescription: 'Good Service' }] },
+    { id: 'central', name: 'Central', modeName: 'tube', lineStatuses: [{ statusSeverity: 6, statusSeverityDescription: 'Severe Delays', reason: 'Signal  failure' }] }
+  ]);
+  assert.equal(out[0].id, 'central');
+  assert.equal(out[0].reason, 'Signal failure');
+  assert.equal(out[1].status, 'Good Service');
+});
+
+test('normaliseWeather maps codes', () => {
+  const w = normaliseWeather({ current: { temperature_2m: 11.6, weather_code: 61, wind_speed_10m: 14.2, precipitation: 0.3, is_day: 0 }, daily: { sunset: ['2026-10-25T16:45'] } });
+  assert.deepEqual([w.tempC, w.summary, w.windKmh, w.isDay, w.sunset], [12, 'Light rain', 14, false, '2026-10-25T16:45']);
+});

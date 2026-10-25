@@ -100,7 +100,7 @@ button{cursor:pointer}
 .panel{background:var(--deck);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;z-index:10}
 .grab{display:none}
 .ptabs{display:flex;border-bottom:1px solid var(--line);flex:none}
-.ptabs button{flex:1;background:none;border:0;border-bottom:2px solid transparent;padding:11px 6px;font:600 12px var(--f-display);letter-spacing:.12em;color:var(--dim)}
+.ptabs button{flex:1;background:none;border:0;border-bottom:2px solid transparent;padding:11px 4px;font:600 11px var(--f-display);letter-spacing:.08em;color:var(--dim);white-space:nowrap}
 .ptabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--signal)}
 .count{font:500 10px var(--f-mono);background:var(--deck-2);border:1px solid var(--line);padding:0 5px;margin-left:4px}
 .pbody{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px;min-height:0;overscroll-behavior:contain}
@@ -141,6 +141,29 @@ button{cursor:pointer}
 .hint{color:var(--dim);font-size:12px;margin:0}
 .note{flex:none;font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding:10px 16px max(10px,env(safe-area-inset-bottom));margin:0}
 
+/* ---- rewind ---- */
+.rewind{display:flex;align-items:center;gap:10px;flex:none}
+.rewind button{width:34px;height:30px;flex:none;background:var(--deck-2);border:1px solid var(--line);border-radius:2px;font:600 12px var(--f-mono);color:var(--signal)}
+.rewind input{flex:1;min-width:0;accent-color:var(--signal)}
+.rewind span{font:500 11px var(--f-mono);min-width:56px;text-align:right;font-variant-numeric:tabular-nums}
+.rewind span.past{color:var(--cyan)}
+
+/* ---- city tab ---- */
+.wx{background:var(--deck-2);border:1px solid var(--line);border-radius:2px;padding:6px 10px;font:500 12px var(--f-mono);display:flex;gap:8px;align-items:center;font-variant-numeric:tabular-nums}
+.wx .dot{width:7px;height:7px}
+.wxcard{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;align-items:baseline;border:1px solid var(--line);padding:12px 14px;background:var(--deck-2)}
+.wxcard .big{font:600 34px/1 var(--f-display);grid-row:span 3}
+.wxcard b{font:600 14px var(--f-display);letter-spacing:.04em}
+.wxcard span{font:12px var(--f-mono);color:var(--dim)}
+.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.lines li{display:grid;grid-template-columns:6px 1fr auto;gap:4px 10px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center}
+.lines i{width:6px;align-self:stretch;border-radius:1px}
+.lines b{font:600 13px var(--f-display);letter-spacing:.03em}
+.lines small{font:11px var(--f-mono);text-align:right}
+.lines p{grid-column:2/-1;margin:0;font-size:12px;color:var(--dim)}
+.st-good{color:var(--ok)}.st-minor{color:var(--signal)}.st-bad{color:var(--bad)}
+#saved .del{color:var(--dim);font:11px var(--f-mono);background:none;border:0;padding:0 4px}
+
 /* ---- fullscreen viewer ---- */
 .viewer{position:fixed;inset:0;z-index:50;background:rgba(3,5,7,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
   padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
@@ -157,6 +180,7 @@ button{cursor:pointer}
   .bar{gap:8px}
   .search{order:5;flex-basis:100%;max-width:none}
   .brand small,.clock{display:none}
+  .wx{order:4;padding:5px 8px;font-size:11px}
   .seg button,.tool{padding:6px 8px;font-size:10px}
   .panel{border-left:0;border-top:1px solid var(--line);height:44vh}
   .app.split .panel{height:64vh}

@@ -23,6 +23,13 @@ test('server serves the shell, health, and clean errors', async t => {
   assert.ok([403, 200].includes(trav.status));
   assert.doesNotMatch(await trav.text(), /createServer/);
 
+  const hist = await fetch(base + '/api/cameras/00001.01251/history');
+  assert.equal(hist.status, 200);
+  assert.deepEqual((await hist.json()).frames, []);
+  const gone = await fetch(base + '/api/cameras/00001.01251/frames/1700000000000');
+  assert.equal(gone.status, 404);
+  assert.equal((await fetch(base + '/api/cameras/bad/history')).status, 400);
+
   const post = await fetch(base + '/api/health', { method: 'POST' });
   assert.equal(post.status, 405);
 });

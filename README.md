@@ -15,13 +15,16 @@ London only, by design: the map is locked to Greater London.
 | Into the camera | Tap a dot for the live still (refreshes every minute), the recent video clip, fullscreen, **Street level** (drops to 18× zoom, tilted along the camera's direction) and Google Street View. |
 | Split-screen wall | Pin up to 9 cameras; **SPLIT** gives the wall half the screen. Pins are remembered on that device. |
 | Patrol | Plans a route through every camera on screen and flies camera to camera every 9 seconds. Touch the map to stop. |
+| Rewind | Scrub back through roughly the last 30 minutes of any camera you've opened, or press ▶ for a timelapse. The server records cameras while people are watching them. |
+| City status | Live weather, sunrise and sunset, and the status of every Tube line plus the Elizabeth line, DLR and Overground. Shown in the top bar and the CITY tab. |
+| Saved views | ★ saves the exact spot, zoom and angle. Saved views are listed under CITY. |
 | Road alerts | Live TfL road disruptions, colour-coded by severity. Tapping one flies there and opens the nearest camera. |
 | Road filter | Chips for the busiest roads (A40, A4, A13…) to show only their cameras. |
 | Search | Camera names, road numbers, streets and postcodes, limited to London. |
 | Share | `COPY LINK` gives a link straight to a camera (`/#cam=00001.01251`). |
 | Installable | Add to Home Screen on iPhone/Android and it opens full-screen like an app. |
 
-Keyboard: `/` search · `N` next camera · `A` patrol · `W` split · `B` 3D · `R` alerts · `S` `D` `M` map style · `H` home · `Esc` close.
+Keyboard: `/` search · `N` next camera · `A` patrol · `W` split · `B` 3D · `R` alerts · `V` save view · `C` city · `S` `D` `M` map style · `H` home · `Esc` close.
 
 ---
 
@@ -34,6 +37,9 @@ Keyboard: `/` search · `N` next camera · `A` patrol · `W` split · `B` 3D · 
  │ app.js  UI, patrol, wall │             │ /api/cameras/:id/image 45s │ ──▶ TfL JamCam images (S3)
  │ api.js  data layer       │             │ /api/disruptions  2 min    │ ──▶ TfL road disruptions
  │ sw.js   offline shell    │             │ /api/geocode   24 h, 1/s   │ ──▶ OpenStreetMap Nominatim
+ │                          │             │ /api/network   2 min       │ ──▶ TfL line status
+ │                          │             │ /api/weather   10 min      │ ──▶ Open-Meteo
+ │                          │             │ /api/cameras/:id/history   │     rewind recorder (memory)
  └──────────┬───────────────┘             │ static files, gzip, CSP    │
             │ map tiles (direct)          │ per-IP rate limits         │
             ▼                             └────────────────────────────┘
@@ -46,6 +52,7 @@ Keyboard: `/` search · `N` next camera · `A` patrol · `W` split · `B` 3D · 
 - **Image caching.** Camera stills are cached for 45 s, so a busy wall doesn't hammer TfL.
 - **Keeps working when TfL blips.** If TfL fails, the last good data is served and marked `stale`.
 - **Fair use of OpenStreetMap search.** Nominatim allows one request a second; the server queues and caches searches.
+- **Rewind.** While anyone is watching a camera, the server saves each new picture it gets. It keeps up to 14 per camera for 60 cameras (about 25 MB at most) and forgets a camera 30 minutes after the last viewer leaves. Set `REWIND_CAMERAS` to change the 60.
 - **Security.** Strict Content-Security-Policy, input validation on camera ids, path-traversal protection, per-IP rate limits, GET-only.
 
 The frontend checks `/api/health` on load. If the server isn't there (a static host), `api.js` switches to direct mode automatically, and the status chip says `DIRECT`.
@@ -76,7 +83,7 @@ aerie/
 
 ```bash
 npm start            # http://localhost:8080
-npm test             # 8 tests
+npm test             # 11 tests, also run on every push by GitHub Actions
 ```
 
 Optional environment variables:
@@ -85,6 +92,7 @@ Optional environment variables:
 |---|---|
 | `PORT` | Port to listen on (default 8080) |
 | `TFL_APP_KEY` | Free key from api-portal.tfl.gov.uk for higher TfL rate limits |
+| `REWIND_CAMERAS` | How many cameras the rewind recorder keeps at once (default 60) |
 | `CONTACT_EMAIL` | Sent to OpenStreetMap with search requests, as their policy asks |
 
 ---
@@ -107,5 +115,6 @@ Drag the `public` folder onto app.netlify.com/drop. You get a live link in secon
 
 - Camera images and disruptions: Transport for London, Open Government Licence. JamCams are public traffic cameras. TfL updates stills every few minutes and the clips are short recent loops, not a continuous live stream.
 - Satellite imagery: Esri World Imagery. Check Esri's terms before heavy commercial use.
+- Weather: Open-Meteo (CC BY 4.0).
 - Map data: © OpenStreetMap contributors, served by OpenFreeMap and CARTO.
 - This app only shows public, licensed feeds. It doesn't use private CCTV and has no face or plate recognition.

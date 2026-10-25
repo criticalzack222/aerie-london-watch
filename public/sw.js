@@ -1,5 +1,5 @@
 // Caches the app shell only. Camera data, stills and map tiles always come from the network.
-const SHELL = 'aerie-shell-v1';
+const SHELL = 'aerie-shell-v2';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'api.js', 'icon.svg', 'manifest.webmanifest'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== SHELL).map(k => caches.delete(k))))); self.clients.claim(); });

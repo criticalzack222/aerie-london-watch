@@ -1,4 +1,4 @@
-import { detect, getMode, getCameras, getDisruptions, imageUrl, geocode } from './api.js';
+import { detect, getMode, getCameras, getDisruptions, imageUrl, geocode, getNetwork, getWeather, rewindAvailable, getHistory, frameUrl } from './api.js';
 
 /* ================= helpers ================= */
 const $ = id => document.getElementById(id);
@@ -23,6 +23,7 @@ const dms = (v, p, n) => { const a = Math.abs(v), d = Math.floor(a), m = Math.fl
 
 /* ================= state ================= */
 let map, cams = [], byId = new Map(), disruptions = [];
+let rw = { frames: [], idx: null, play: null }; // rewind: idx null = live
 let selected = null, clip = false, roadFilter = null, styleKind = store.get('style', 'sat');
 let show3d = store.get('3d', true), showDisr = store.get('disr', true);
 let pins = store.get('pins', []);
@@ -94,7 +95,8 @@ function initMap() {
   map.on('style.load', addOverlays);
   map.once('load', () => {
     $('boot').classList.add('done');
-    loadCameras(); loadDisruptions();
+    loadCameras(); loadDisruptions(); loadCity();
+    setInterval(loadCity, 3 * 60e3);
     setInterval(loadCameras, 10 * 60e3);
     setInterval(loadDisruptions, 5 * 60e3);
   });
@@ -259,12 +261,21 @@ function selectCam(c, { fly = false, street = false } = {}) {
   $('pinBtn').textContent = pins.includes(c.id) ? 'UNPIN' : 'PIN TO WALL';
   openTab('feed');
   $('paneFeed').scrollTop = 0; // keep the live picture in view after picking from the list
+  stopRewind(); rw = { frames: [], idx: null, play: null }; loadHistory();
   document.getElementById('app').classList.remove('sheet-min');
 }
 
 function renderFeed() {
   const c = selected, f = $('feed');
   if (!c) return;
+  if (!clip && rw.idx != null) {
+    // rewinding: swap the picture in place so playback doesn't flicker
+    const fr = rw.frames[rw.idx], src = frameUrl(c.id, fr.t), img = f.querySelector('img[data-rw]');
+    if (img) { img.src = src; f.querySelector('.ts').textContent = fmtTime(new Date(fr.t)); return; }
+    f.innerHTML = `<img data-rw src="${esc(src)}" alt="Earlier view from ${esc(c.name)}"><div class="tag"><span class="dot" style="background:var(--cyan)"></span>REWIND</div><div class="ts">${fmtTime(new Date(fr.t))}</div>`;
+    f.querySelector('img').onclick = () => openViewer(c);
+    return;
+  }
   f.classList.add('loading');
   f.innerHTML = (clip && c.vid
     ? `<video src="${esc(c.vid)}" autoplay muted loop playsinline></video>`
@@ -278,7 +289,46 @@ function renderFeed() {
   }, { once: true });
   if (!clip) f.querySelector('img').onclick = () => openViewer(c);
 }
-setInterval(() => { if (selected && !clip && !document.hidden) renderFeed(); }, 60e3);
+setInterval(() => { if (selected && !clip && rw.idx == null && !document.hidden) { renderFeed(); loadHistory(); } }, 60e3);
+
+/* ================= rewind ================= */
+async function loadHistory() {
+  if (!selected || !rewindAvailable()) { $('rewind').hidden = true; $('rwHint').hidden = true; return; }
+  const id = selected.id;
+  try { const fr = await getHistory(id); if (selected?.id !== id) return; rw.frames = fr; } catch { rw.frames = []; }
+  const n = rw.frames.length;
+  $('rewind').hidden = n < 2;
+  $('rwHint').hidden = n >= 2;
+  $('rwHint').textContent = 'Rewind is now recording this camera. Come back in a few minutes to scrub through the last half hour.';
+  $('rwRange').max = n;
+  if (rw.idx == null) $('rwRange').value = n;
+  rwLabel();
+}
+function rwLabel() {
+  const l = $('rwLabel'), past = rw.idx != null;
+  l.textContent = past ? fmtTime(new Date(rw.frames[rw.idx].t)).slice(0, 5) : 'LIVE';
+  l.classList.toggle('past', past);
+  $('rwPlay').textContent = rw.play ? '❚❚' : '▶';
+}
+function seek(i) {
+  const n = rw.frames.length;
+  rw.idx = i >= n ? null : Math.max(0, i);
+  $('rwRange').value = rw.idx == null ? n : rw.idx;
+  if (clip) { clip = false; $('clipBtn').textContent = 'PLAY CLIP'; }
+  if (rw.idx == null) renderFeedLive(); else renderFeed();
+  rwLabel();
+}
+function renderFeedLive() { $('feed').innerHTML = ''; renderFeed(); }
+function stopRewind() { clearInterval(rw.play); rw.play = null; if ($('rwPlay')) rwLabel(); }
+$('rwRange').addEventListener('input', e => { stopRewind(); seek(+e.target.value); });
+$('rwPlay').onclick = () => {
+  if (rw.play) return stopRewind();
+  if (rw.frames.length < 2 || !selected) return;
+  rw.frames.forEach(f => { const im = new Image(); im.src = frameUrl(selected.id, f.t); }); // preload
+  if (rw.idx == null) seek(0);
+  rw.play = setInterval(() => { seek((rw.idx ?? rw.frames.length) + 1); if (rw.idx == null) stopRewind(); }, 800);
+  rwLabel();
+};
 
 $('clipBtn').onclick = () => { clip = !clip; $('clipBtn').textContent = clip ? 'SHOW STILL' : 'PLAY CLIP'; renderFeed(); };
 $('bigBtn').onclick = () => selected && openViewer(selected);
@@ -448,7 +498,7 @@ $('btnSplit').onclick = () => setSplit();
 $('grab').onclick = () => { $('app').classList.toggle('sheet-min'); setTimeout(() => map?.resize(), 80); };
 
 function openTab(t) {
-  for (const [tab, pane] of [['tabFeed', 'paneFeed'], ['tabWall', 'paneWall'], ['tabAlerts', 'paneAlerts']]) {
+  for (const [tab, pane] of [['tabFeed', 'paneFeed'], ['tabWall', 'paneWall'], ['tabAlerts', 'paneAlerts'], ['tabCity', 'paneCity']]) {
     const on = pane.toLowerCase().endsWith(t);
     $(tab).setAttribute('aria-selected', on); $(pane).hidden = !on;
   }
@@ -456,6 +506,59 @@ function openTab(t) {
 $('tabFeed').onclick = () => openTab('feed');
 $('tabWall').onclick = () => openTab('wall');
 $('tabAlerts').onclick = () => openTab('alerts');
+$('tabCity').onclick = () => openTab('city');
+
+/* ================= city: weather, rail network, saved views ================= */
+const LINE_COLOURS = { bakerloo: '#b36305', central: '#e32017', circle: '#ffd300', district: '#00782a', 'hammersmith-city': '#f3a9bb',
+  jubilee: '#a0a5a9', metropolitan: '#9b0056', northern: '#c9d6df', piccadilly: '#3d5af1', victoria: '#0098d4', 'waterloo-city': '#95cdba',
+  'elizabeth': '#6950a1', dlr: '#00a4a7' };
+const lineClass = s => (/good/i.test(s) ? 'st-good' : /closed|planned/i.test(s) ? '' : /minor|reduced|special/i.test(s) ? 'st-minor' : 'st-bad');
+async function loadCity() {
+  const [wx, lines] = await Promise.allSettled([getWeather(), getNetwork()]);
+  const w = wx.status === 'fulfilled' ? wx.value : null;
+  const ls = lines.status === 'fulfilled' ? lines.value : null;
+  if (w) {
+    const hm = s => (s ? s.slice(11, 16) : '—');
+    $('wxCard').innerHTML = `<div class="big">${w.tempC ?? '—'}°</div><b>${esc(w.summary)}</b>
+      <span>Wind ${w.windKmh ?? '—'} km/h${w.rainMm ? ` · rain ${w.rainMm} mm` : ''}</span>
+      <span>Sunrise ${hm(w.sunrise)} · Sunset ${hm(w.sunset)}</span>`;
+  } else $('wxCard').innerHTML = '<p class="hint">Weather is unavailable right now.</p>';
+  let issues = 0;
+  if (ls) {
+    issues = ls.filter(l => !/good|closed/i.test(l.status)).length;
+    $('lines').innerHTML = ls.map(l => `<li><i style="background:${LINE_COLOURS[l.id] || (l.mode === 'overground' ? '#ee7c0e' : '#8398a8')}"></i>
+      <b>${esc(l.name)}</b><small class="${lineClass(l.status)}">${esc(l.status)}</small>${l.reason && !/good/i.test(l.status) ? `<p>${esc(l.reason.replace(/^[^:]+:\s*/, ''))}</p>` : ''}</li>`).join('');
+    $('netUpdated').textContent = '· ' + fmtTime().slice(0, 5);
+  } else $('lines').innerHTML = '<li class="hint" style="display:block">Rail status is unavailable right now.</li>';
+  $('cityCount').hidden = !issues; $('cityCount').textContent = issues;
+  if (w || ls) {
+    $('wx').hidden = false;
+    $('wx').innerHTML = (w ? `<b>${w.tempC ?? '—'}°</b> ${esc(w.summary)}` : '') + (ls ? ` <span class="dot ${issues ? 'warn' : 'live'}"></span>${issues ? `${issues} LINE${issues > 1 ? 'S' : ''} DISRUPTED` : 'TUBE OK'}` : '');
+  }
+}
+$('wx').onclick = () => { openTab('city'); $('app').classList.remove('sheet-min'); };
+
+let saved = store.get('saved', []);
+function renderSaved() {
+  $('savedHint').hidden = saved.length > 0;
+  $('saved').innerHTML = saved.map((v, i) => `<li><button data-i="${i}"><span>${esc(v.name)}</span><small>${Math.round(v.zoom)}× <span class="del" data-del="${i}" role="button" aria-label="Delete ${esc(v.name)}">✕</span></small></button></li>`).join('');
+}
+function saveView() {
+  if (!map) return;
+  const c = map.getCenter(), near = nearest([c.lng, c.lat], 1)[0];
+  const name = near && near.m < 400 ? 'Near ' + near.c.name : `View ${saved.length + 1} · ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)}`;
+  saved = [{ name, center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }, ...saved].slice(0, 20);
+  store.set('saved', saved); renderSaved(); toast('View saved · find it under CITY');
+}
+$('saveView').onclick = saveView;
+$('saved').onclick = e => {
+  const d = e.target.closest('[data-del]');
+  if (d) { e.stopPropagation(); saved.splice(+d.dataset.del, 1); store.set('saved', saved); renderSaved(); return; }
+  const b = e.target.closest('button'); if (!b) return;
+  const v = saved[+b.dataset.i];
+  map.flyTo({ center: v.center, zoom: v.zoom, pitch: show3d ? v.pitch : 0, bearing: v.bearing, duration: dur(1800) });
+};
+renderSaved();
 
 /* ================= viewer ================= */
 let viewing = null;
@@ -526,6 +629,7 @@ document.addEventListener('keydown', e => {
     '/': () => q.focus(), escape: () => (viewing ? closeViewer() : patrol && stopPatrol('Patrol stopped')),
     n: () => { const from = selected ? [selected.lon, selected.lat] : [map.getCenter().lng, map.getCenter().lat]; const x = nearest(from, 1, visited.slice(0, 10))[0]; if (x) selectCam(x.c, { fly: true }); },
     a: () => $('btnPatrol').click(), w: () => setSplit(), b: () => set3d(!show3d), r: () => setDisr(!showDisr),
+    v: () => saveView(), c: () => openTab('city'),
     h: () => $('home').click(), s: () => setStyleKind('sat'), d: () => setStyleKind('night'), m: () => setStyleKind('map'),
     arrowright: () => viewing && viewerStep(1), arrowleft: () => viewing && viewerStep(-1)
   }[k];

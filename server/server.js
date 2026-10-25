@@ -8,13 +8,19 @@
  *   GET /api/cameras/:id/image       camera still, proxied + cached 45 s
  *   GET /api/disruptions             live TfL road disruptions, cached 2 min
  *   GET /api/geocode?q=...           London-bounded place search (Nominatim), cached 24 h, 1 req/s upstream
+ *   GET /api/cameras/:id/history     timestamps of recent distinct stills (rewind), last ~30-40 min
+ *   GET /api/cameras/:id/frames/:t   one recorded still
+ *   GET /api/network                 Tube, Elizabeth line, DLR and Overground status, cached 2 min
+ *   GET /api/weather                 current central-London weather (Open-Meteo), cached 10 min
  *   everything else                  static files from ../public
  */
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
-const { LONDON_BBOX, normaliseCameras, normaliseDisruptions, isCamId, makeLimiter, makeCache } = require('./lib');
+const crypto = require('node:crypto');
+const { LONDON_BBOX, normaliseCameras, normaliseDisruptions, isCamId, makeLimiter, makeCache,
+  makeRecorder, normaliseLines, normaliseWeather } = require('./lib');
 
 const PORT = +process.env.PORT || 8080;
 const TFL_KEY = process.env.TFL_APP_KEY || '';          // optional: raises TfL rate limits
@@ -23,6 +29,8 @@ const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const UA = `AerieLondonWatch/1.0 (+${CONTACT})`;
 
 const cache = makeCache({ max: 600 });
+const recorder = makeRecorder({ maxCams: +process.env.REWIND_CAMERAS || 60, maxFrames: 14, watchMs: 30 * 60e3 });
+const jamcam = id => `https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/${id}.jpg`;
 const apiLimit = makeLimiter({ capacity: 120, refillPerSec: 2 });   // 120 burst, ~120/min per IP
 const geoLimit = makeLimiter({ capacity: 10, refillPerSec: 0.2 });  // 10 burst, 12/min per IP
 
@@ -60,7 +68,7 @@ const SECURITY_HEADERS = {
     "font-src https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://*.amazonaws.com https://server.arcgisonline.com https://*.basemaps.cartocdn.com",
     "media-src 'self' https://*.amazonaws.com",
-    "connect-src 'self' https://api.tfl.gov.uk https://nominatim.openstreetmap.org https://tiles.openfreemap.org https://server.arcgisonline.com https://*.basemaps.cartocdn.com",
+    "connect-src 'self' https://api.tfl.gov.uk https://api.open-meteo.com https://nominatim.openstreetmap.org https://tiles.openfreemap.org https://server.arcgisonline.com https://*.basemaps.cartocdn.com",
     "worker-src 'self' blob:",
     "frame-ancestors 'none'"
   ].join('; ')
@@ -88,7 +96,8 @@ async function api(req, res, url) {
   const p = url.pathname;
 
   if (p === '/api/health') {
-    return send(req, res, 200, { ok: true, uptime: Math.round(process.uptime()), cached: cache.size() }, { 'Cache-Control': 'no-store' });
+    return send(req, res, 200, { ok: true, uptime: Math.round(process.uptime()), cached: cache.size(), rewind: recorder.stats(),
+      memoryMB: Math.round(process.memoryUsage().rss / 1048576) }, { 'Cache-Control': 'no-store' });
   }
 
   if (p === '/api/cameras') {
@@ -101,8 +110,36 @@ async function api(req, res, url) {
   if (m) {
     const id = m[1];
     if (!isCamId(id)) return fail(req, res, 400, 'Camera id should look like 00001.01251.');
-    const { value } = await cache.get('img:' + id, 45e3, () => upstream(`https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/${id}.jpg`, { as: 'bin' }));
+    recorder.watch(id);
+    const value = await fetchStill(id);
     return send(req, res, 200, value.buf, { 'Content-Type': value.type, 'Cache-Control': 'public, max-age=30' });
+  }
+
+  const hm = /^\/api\/cameras\/([^/]+)\/history$/.exec(p);
+  if (hm) {
+    if (!isCamId(hm[1])) return fail(req, res, 400, 'Camera id should look like 00001.01251.');
+    recorder.watch(hm[1]);
+    return send(req, res, 200, { id: hm[1], frames: recorder.list(hm[1]) }, { 'Cache-Control': 'no-store' });
+  }
+
+  const fm = /^\/api\/cameras\/([^/]+)\/frames\/(\d{10,14})$/.exec(p);
+  if (fm) {
+    if (!isCamId(fm[1])) return fail(req, res, 400, 'Camera id should look like 00001.01251.');
+    const f = recorder.get(fm[1], +fm[2]);
+    if (!f) return fail(req, res, 404, 'That frame has expired. Rewind keeps roughly the last 30 minutes.');
+    return send(req, res, 200, f.buf, { 'Content-Type': f.type, 'Cache-Control': 'public, max-age=86400, immutable' });
+  }
+
+  if (p === '/api/network') {
+    const { value, stale } = await cache.get('net', 120e3, async () =>
+      normaliseLines(await upstream(tfl('/Line/Mode/tube,elizabeth-line,dlr,overground/Status'), { timeout: 15000 })));
+    return send(req, res, 200, { updated: new Date().toISOString(), stale, lines: value }, { 'Cache-Control': 'public, max-age=60' });
+  }
+
+  if (p === '/api/weather') {
+    const { value, stale } = await cache.get('wx', 600e3, async () => normaliseWeather(await upstream(
+      'https://api.open-meteo.com/v1/forecast?latitude=51.5074&longitude=-0.1278&current=temperature_2m,weather_code,wind_speed_10m,precipitation,is_day&daily=sunrise,sunset&forecast_days=1&timezone=Europe%2FLondon')));
+    return send(req, res, 200, { updated: new Date().toISOString(), stale, ...value }, { 'Cache-Control': 'public, max-age=300' });
   }
 
   if (p === '/api/disruptions') {
@@ -120,6 +157,30 @@ async function api(req, res, url) {
   }
 
   return fail(req, res, 404, 'No such API route.');
+}
+
+/* ---------- stills + rewind recording ---------- */
+async function fetchStill(id) {
+  const { value } = await cache.get('img:' + id, 45e3, async () => {
+    const img = await upstream(jamcam(id), { as: 'bin' });
+    img.hash = crypto.createHash('sha1').update(img.buf).digest('hex');
+    return img;
+  });
+  recorder.add(id, { t: Date.now(), hash: value.hash, type: value.type, buf: value.buf });
+  return value;
+}
+
+// Every minute, refresh the cameras someone watched in the last 30 minutes, 4 at a time.
+let recording = false;
+async function recordTick() {
+  if (recording) return;
+  recording = true;
+  try {
+    const ids = recorder.due();
+    for (let i = 0; i < ids.length; i += 4) {
+      await Promise.allSettled(ids.slice(i, i + 4).map(fetchStill));
+    }
+  } finally { recording = false; }
 }
 
 /* ---------- static files ---------- */
@@ -158,7 +219,9 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   server.listen(PORT, () => console.log(`Aerie London Watch on http://localhost:${PORT}`));
+  setInterval(recordTick, 60e3).unref();
   const stop = () => server.close(() => process.exit(0));
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }
 module.exports = server;
+module.exports.recordTick = recordTick;
